@@ -6,9 +6,9 @@ use pageserver::{CreateTimelineRequest, CreateTimelineResponse};
 
 pub async fn create_timeline(
     pageserver_addr: &str,
-    new_timeline_id: &str,
     base_timeline_id: Option<&str>,
     fork_lsn: Option<u64>,
+    new_timeline_id: &str,
 ) -> anyhow::Result<CreateTimelineResponse> {
     let mut client = PageServerClient::connect(format!("http://{}", pageserver_addr)).await?;
     let req = CreateTimelineRequest {

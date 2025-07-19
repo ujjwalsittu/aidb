@@ -1,15 +1,14 @@
+// src/main.rs
+
 pub mod pageserver {
     tonic::include_proto!("pageserver");
 }
 mod s3store;
 use s3store::*;
-use std::env;
-mod storage;
 use pageserver::page_server_server::{PageServer, PageServerServer};
 use pageserver::*;
 use tonic::{transport::Server, Request, Response, Status};
-use tracing::{info};
-use uuid::Uuid;
+use tracing::info;
 
 #[derive(Default)]
 pub struct MyPageServer;
@@ -30,6 +29,19 @@ impl PageServer for MyPageServer {
         }))
     }
 
+    async fn upload_wal_chunk(
+        &self,
+        request: Request<UploadWalChunkRequest>,
+    ) -> Result<Response<UploadWalChunkResponse>, Status> {
+        let req = request.into_inner();
+        let cfg = S3Config::from_env();
+        let s3 = s3_client(&cfg).await.map_err(|e| Status::internal(format!("{e:?}")))?;
+        match upload_wal_chunk(&s3, &cfg.bucket, &req.timeline_id, req.lsn, &req.data).await {
+            Ok(_) => Ok(Response::new(UploadWalChunkResponse { success: true, error: "".into() })),
+            Err(e) => Ok(Response::new(UploadWalChunkResponse { success: false, error: format!("{e:?}") })),
+        }
+    }
+
     async fn create_timeline(
         &self,
         request: Request<CreateTimelineRequest>,
@@ -47,7 +59,8 @@ impl PageServer for MyPageServer {
         &self,
         _request: Request<ListTimelinesRequest>,
     ) -> Result<Response<ListTimelinesResponse>, Status> {
-        let timelines = storage::list_timelines();
+        let cfg = S3Config::from_env();
+        let timelines = list_timelines_s3(&cfg).await.unwrap_or_default();
         Ok(Response::new(ListTimelinesResponse {
             timeline_ids: timelines,
         }))
@@ -57,7 +70,6 @@ impl PageServer for MyPageServer {
         &self,
         _request: Request<GcUnusedDataRequest>,
     ) -> Result<Response<GcUnusedDataResponse>, Status> {
-        // For demo: No GC.
         Ok(Response::new(GcUnusedDataResponse {
             success: true,
             error: "".to_string(),
@@ -67,8 +79,19 @@ impl PageServer for MyPageServer {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Load the project's .env (if present) and all global env variables!
+    dotenvy::dotenv().ok();
     tracing_subscriber::fmt::init();
     let addr = "127.0.0.1:7867".parse()?;
+
+    // Print config at startup (for sanity)
+    println!(
+        "AIDB pageserver config: bucket={} region={} endpoint={} access_key={}",
+        std::env::var("AIDB_S3_BUCKET").unwrap_or_default(),
+        std::env::var("AIDB_AWS_REGION").unwrap_or_default(),
+        std::env::var("AIDB_S3_ENDPOINT").unwrap_or_default(),
+        std::env::var("AIDB_AWS_ACCESS_KEY").unwrap_or_default()
+    );
     println!("AIDB PageServer gRPC running at {}", addr);
 
     let ps = MyPageServer::default();

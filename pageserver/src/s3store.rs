@@ -1,7 +1,7 @@
+use anyhow::Result;
 use aws_sdk_s3::config::{Builder, Credentials, Region};
 use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::Client;
-use anyhow::Result;
 
 pub struct S3Config {
     pub bucket: String,
@@ -36,7 +36,6 @@ pub async fn s3_client(cfg: &S3Config) -> Result<Client> {
         ))
         .behavior_version_latest();
 
-
     if let Some(endpoint) = &cfg.endpoint {
         builder = builder.endpoint_url(endpoint);
     }
@@ -44,6 +43,39 @@ pub async fn s3_client(cfg: &S3Config) -> Result<Client> {
     Ok(Client::from_conf(config))
 }
 
+pub async fn upload_wal_chunk(
+    s3: &Client,
+    bucket: &str,
+    timeline_id: &str,
+    lsn: u64,
+    data: &[u8],
+) -> Result<()> {
+    let key = format!("aidb-wal/{}/{}.wal", timeline_id, lsn);
+    s3.put_object()
+        .bucket(bucket)
+        .key(&key)
+        .body(ByteStream::from(data.to_vec()))
+        .send()
+        .await?;
+    Ok(())
+}
+
+pub async fn list_timelines_s3(cfg: &S3Config) -> Result<Vec<String>> {
+    let cli = s3_client(cfg).await?;
+    let resp = cli
+        .list_objects_v2()
+        .bucket(&cfg.bucket)
+        .prefix("")
+        .send()
+        .await?;
+    Ok(resp
+        .contents
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|obj| obj.key.as_ref())
+        .filter_map(|k| k.strip_suffix(".bin").map(str::to_string))
+        .collect())
+}
 pub async fn get_timeline(cfg: &S3Config, timeline_id: &str) -> Result<Vec<u8>> {
     let cli = s3_client(cfg).await?;
     let obj = cli
@@ -56,8 +88,8 @@ pub async fn get_timeline(cfg: &S3Config, timeline_id: &str) -> Result<Vec<u8>> 
         Ok(res) => {
             let data = res.body.collect().await?.into_bytes();
             Ok(data.to_vec())
-        },
-        Err(_) => Ok(vec![]) // Not found = empty
+        }
+        Err(_) => Ok(vec![]), // Not found = empty
     }
 }
 

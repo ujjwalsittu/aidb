@@ -3,7 +3,8 @@ extern crate diesel;
 
 mod db;
 mod schema;
-mod compute; 
+mod compute;
+mod pageserver_client;
 
 use tonic::{transport::Server, Request, Response, Status};
 use orchestrator::orchestrator_server::{Orchestrator, OrchestratorServer};
@@ -14,15 +15,13 @@ use chrono::Utc;
 use db::{establish_connection, Workspace, Project};
 use tonic_reflection::server::Builder as ReflectionBuilder;
 use compute::set_pg_compute_replicas;
-
+use pageserver_client::create_timeline;
 
 pub mod orchestrator {
     tonic::include_proto!("orchestrator");
     pub const FILE_DESCRIPTOR_SET: &[u8] = include_bytes!("orchestrator_descriptor.bin");
 }
 
-
-// Real Orchestrator with workspace/project DB
 #[derive(Default)]
 pub struct MyOrchestrator;
 
@@ -36,19 +35,14 @@ impl Orchestrator for MyOrchestrator {
         let req = request.into_inner();
         info!("ProvisionDatabase: {:?}", req);
 
-        // Create workspace and project in DB
         let mut conn = establish_connection();
-
-        let ws_id = req.team_id; // In a real case, generate or verify
+        let ws_id = req.team_id;
         let proj_id = req.database_id;
 
-        // Check plan quota
-        // Check quota; return early if over limit
         if let Err(msg) = db::check_plan_quota(&mut conn, &req.plan, &ws_id) {
             return Ok(Response::new(ProvisionDatabaseResponse{ success: false, error: msg }));
         }
 
-        // Insert workspace if not exists
         let ws_exists = db::workspace_exists(&mut conn, &ws_id);
         if !ws_exists {
             let ws = Workspace {
@@ -69,12 +63,10 @@ impl Orchestrator for MyOrchestrator {
         };
         db::insert_project(&mut conn, pj).map_err(|e| Status::internal(format!("{:?}", e)))?;
 
-        // TODO: Call kube to deploy resources (stub for now)
         let compute_name = proj_id.clone();
         let workspace = ws_id.clone();
         let plan = req.plan;
-        let pg_image = if req.postgres_version == "17" { "postgres:17" } else { "postgres:15" }; // example
-        // Do actual K8s deploy
+        let pg_image = if req.postgres_version == "17" { "postgres:17" } else { "postgres:15" };
         if let Err(e) = compute::deploy_pg_compute(&compute_name, pg_image, &workspace, &plan, &req.postgres_version).await {
             error!("Failed to deploy compute: {:?}", e);
             return Ok(Response::new(ProvisionDatabaseResponse { success: false, error: format!("Failed K8s deploy: {:?}", e) }));
@@ -91,31 +83,37 @@ impl Orchestrator for MyOrchestrator {
         let req = request.into_inner();
         info!("CreateBranch: {:#?}", req);
 
-        // Could insert a new project row for branch
         let mut conn = establish_connection();
-
         let branch = Project {
             id: req.new_branch_id.clone(),
-            workspace_id: req.source_db_id.clone(), // or look up workspace id
+            workspace_id: req.source_db_id.clone(),
             db_version: "branch".to_string(),
             status: "provisioning".to_string(),
             created_at: Utc::now().naive_utc(),
         };
-
         db::insert_project(&mut conn, branch).map_err(|e| Status::internal(format!("{:?}", e)))?;
+
+        // Actually create the timeline on PageServer!
+        let pageserver_addr = "127.0.0.1:7867";
+        let resp = create_timeline(
+            pageserver_addr,
+            Some(&req.source_db_id),
+            None,
+            &req.new_branch_id
+        ).await.map_err(|e| Status::internal(format!("pageserver error: {:?}", e)))?;
+        if !resp.success {
+            return Err(Status::internal(format!("PageServer branch error: {}", resp.error)));
+        }
 
         Ok(Response::new(CreateBranchResponse { success: true, error: "".into() }))
     }
 
-    // == WAKE UP COMPUTE ==
     async fn wake_up_compute(
         &self,
         request: Request<WakeUpComputeRequest>
     ) -> Result<Response<WakeUpComputeResponse>, Status> {
         let req = request.into_inner();
         info!("Wake up compute: {}", req.database_id);
-    
-        // Scale to 1 replica to serve traffic
         if let Err(e) = set_pg_compute_replicas(&req.database_id, 1).await {
             error!("Failed to scale compute: {:?}", e);
             return Ok(Response::new(WakeUpComputeResponse { success: false }));
@@ -123,7 +121,6 @@ impl Orchestrator for MyOrchestrator {
         Ok(Response::new(WakeUpComputeResponse { success: true }))
     }
 
-    // == GET STATUS (List all projects in a workspace) ==
     async fn get_status(
         &self,
         request: Request<GetStatusRequest>
@@ -131,12 +128,10 @@ impl Orchestrator for MyOrchestrator {
         let req = request.into_inner();
         let mut conn = establish_connection();
         let projects = db::get_projects_by_workspace(&mut conn, &req.workspace_id);
-
         let pjson = serde_json::to_string(&projects).unwrap();
         Ok(Response::new(GetStatusResponse { status_json: pjson }))
     }
 
-    // == LIST ALL WORKSPACES ==
     async fn list_workspaces(
         &self,
         _request: Request<ListWorkspacesRequest>
@@ -147,16 +142,12 @@ impl Orchestrator for MyOrchestrator {
     }
 }
 
-
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
-
     let addr = "127.0.0.1:50051".parse()?;
     let orchestrator = MyOrchestrator::default();
 
-    // Enable reflection service with our proto
     let reflection = ReflectionBuilder::configure()
         .register_encoded_file_descriptor_set(
             orchestrator::FILE_DESCRIPTOR_SET
@@ -173,4 +164,3 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
-

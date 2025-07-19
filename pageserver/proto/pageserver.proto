@@ -6,6 +6,7 @@ service PageServer {
   rpc CreateTimeline(CreateTimelineRequest) returns (CreateTimelineResponse);
   rpc ListTimelines(ListTimelinesRequest) returns (ListTimelinesResponse);
   rpc GcUnusedData(GcUnusedDataRequest) returns (GcUnusedDataResponse);
+  rpc UploadWalChunk(UploadWalChunkRequest) returns (UploadWalChunkResponse); // <-- HERE!
 }
 
 message GetPageRequest {
@@ -13,7 +14,6 @@ message GetPageRequest {
   uint64 lsn = 2;   // Log Sequence Number
   bytes rel = 3;    // Relation/page key
 }
-
 message GetPageResponse {
   bytes page_data = 1;
   string error = 2;
@@ -36,6 +36,17 @@ message ListTimelinesResponse {
 
 message GcUnusedDataRequest {}
 message GcUnusedDataResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+// The WAL chunk ingest interface:
+message UploadWalChunkRequest {
+  string timeline_id = 1;
+  uint64 lsn = 2;
+  bytes data = 3;
+}
+message UploadWalChunkResponse {
   bool success = 1;
   string error = 2;
 }
