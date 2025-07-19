@@ -6,7 +6,7 @@ service PageServer {
   rpc CreateTimeline(CreateTimelineRequest) returns (CreateTimelineResponse);
   rpc ListTimelines(ListTimelinesRequest) returns (ListTimelinesResponse);
   rpc GcUnusedData(GcUnusedDataRequest) returns (GcUnusedDataResponse);
-  rpc UploadWalChunk(UploadWalChunkRequest) returns (UploadWalChunkResponse); 
+  rpc UploadWalChunk(UploadWalChunkRequest) returns (UploadWalChunkResponse);
   rpc RestoreTimelineToLsn(RestoreTimelineRequest) returns (RestoreTimelineResponse);
 
 }

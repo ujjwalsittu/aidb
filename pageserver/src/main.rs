@@ -4,9 +4,10 @@ pub mod pageserver {
     tonic::include_proto!("pageserver");
 }
 mod s3store;
-use s3store::*;
 use pageserver::page_server_server::{PageServer, PageServerServer};
 use pageserver::*;
+use pageserver::{RestoreTimelineRequest, RestoreTimelineResponse};
+use s3store::*;
 use tonic::{transport::Server, Request, Response, Status};
 use tracing::info;
 
@@ -21,8 +22,14 @@ impl PageServer for MyPageServer {
     ) -> Result<Response<GetPageResponse>, Status> {
         let req = request.into_inner();
         let cfg = S3Config::from_env();
-        let data = get_timeline(&cfg, &req.timeline_id).await.unwrap_or_default();
-        let error = if data.is_empty() { "Page not found".to_string() } else { "".to_string() };
+        let data = get_timeline(&cfg, &req.timeline_id)
+            .await
+            .unwrap_or_default();
+        let error = if data.is_empty() {
+            "Page not found".to_string()
+        } else {
+            "".to_string()
+        };
         Ok(Response::new(GetPageResponse {
             page_data: data,
             error,
@@ -35,10 +42,18 @@ impl PageServer for MyPageServer {
     ) -> Result<Response<UploadWalChunkResponse>, Status> {
         let req = request.into_inner();
         let cfg = S3Config::from_env();
-        let s3 = s3_client(&cfg).await.map_err(|e| Status::internal(format!("{e:?}")))?;
+        let s3 = s3_client(&cfg)
+            .await
+            .map_err(|e| Status::internal(format!("{e:?}")))?;
         match upload_wal_chunk(&s3, &cfg.bucket, &req.timeline_id, req.lsn, &req.data).await {
-            Ok(_) => Ok(Response::new(UploadWalChunkResponse { success: true, error: "".into() })),
-            Err(e) => Ok(Response::new(UploadWalChunkResponse { success: false, error: format!("{e:?}") })),
+            Ok(_) => Ok(Response::new(UploadWalChunkResponse {
+                success: true,
+                error: "".into(),
+            })),
+            Err(e) => Ok(Response::new(UploadWalChunkResponse {
+                success: false,
+                error: format!("{e:?}"),
+            })),
         }
     }
 
@@ -48,8 +63,25 @@ impl PageServer for MyPageServer {
     ) -> Result<Response<CreateTimelineResponse>, Status> {
         let req = request.into_inner();
         let cfg = S3Config::from_env();
-        put_page(&cfg, &req.new_timeline_id, b"").await.map_err(|e| Status::internal(format!("failed to create: {e:?}")))?;
+        put_page(&cfg, &req.new_timeline_id, b"")
+            .await
+            .map_err(|e| Status::internal(format!("failed to create: {e:?}")))?;
         Ok(Response::new(CreateTimelineResponse {
+            success: true,
+            error: "".to_string(),
+        }))
+    }
+
+    async fn restore_timeline_to_lsn(
+        &self,
+        request: Request<RestoreTimelineRequest>,
+    ) -> Result<Response<RestoreTimelineResponse>, Status> {
+        let req = request.into_inner();
+        // TODO: Add restore/replay logic here.
+        // Right now: just create the branch timeline as an empty object for demo/dev.
+        let cfg = S3Config::from_env();
+        let _ = put_page(&cfg, &req.new_timeline_id, b"").await;
+        Ok(Response::new(RestoreTimelineResponse {
             success: true,
             error: "".to_string(),
         }))

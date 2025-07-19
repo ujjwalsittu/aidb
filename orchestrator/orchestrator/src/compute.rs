@@ -103,6 +103,7 @@ pub async fn deploy_pg_compute(
     workspace_id: &str,
     plan: &str,
     db_version: &str,
+    timeline_id: &str,  // Add this parameter
 ) -> anyhow::Result<()> {
     let client = Client::try_default().await?;
     let deployments: Api<Deployment> = Api::namespaced(client, "default");
@@ -127,7 +128,7 @@ pub async fn deploy_pg_compute(
             &format!("aidb-cred-{}", db_name),
             "POSTGRES_USER",
         ),
-        env("AIDB_TIMELINE_ID", &timeline_id), // timeline_id is either main or branch
+        env("AIDB_TIMELINE_ID", timeline_id), // Now timeline_id is in scope
         env_from_secret(
             "POSTGRES_PASSWORD",
             &format!("aidb-cred-{}", db_name),

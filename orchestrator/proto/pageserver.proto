@@ -6,9 +6,21 @@ service PageServer {
   rpc CreateTimeline(CreateTimelineRequest) returns (CreateTimelineResponse);
   rpc ListTimelines(ListTimelinesRequest) returns (ListTimelinesResponse);
   rpc GcUnusedData(GcUnusedDataRequest) returns (GcUnusedDataResponse);
-  rpc UploadWalChunk(UploadWalChunkRequest) returns (UploadWalChunkResponse); // <-- HERE!
+  rpc UploadWalChunk(UploadWalChunkRequest) returns (UploadWalChunkResponse); 
+  rpc RestoreTimelineToLsn(RestoreTimelineRequest) returns (RestoreTimelineResponse);
+
 }
 
+
+message RestoreTimelineRequest {
+  string base_timeline_id = 1; // the source/parent timeline
+  string new_timeline_id = 2;  // the branch to create
+  uint64 target_lsn = 3;       // restore up to this LSN
+}
+message RestoreTimelineResponse {
+  bool success = 1;
+  string error = 2;
+}
 message GetPageRequest {
   string timeline_id = 1;
   uint64 lsn = 2;   // Log Sequence Number

@@ -8,6 +8,7 @@ service Orchestrator {
   rpc GetStatus (GetStatusRequest) returns (GetStatusResponse);
   rpc ListWorkspaces (ListWorkspacesRequest) returns (ListWorkspacesResponse);
   rpc ListAllTimelines(ListAllTimelinesRequest) returns (ListAllTimelinesResponse);
+  
 
 }
 
