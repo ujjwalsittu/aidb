@@ -1,0 +1,46 @@
+syntax = "proto3";
+package orchestrator;
+
+service Orchestrator {
+  rpc ProvisionDatabase (ProvisionDatabaseRequest) returns (ProvisionDatabaseResponse);
+  rpc CreateBranch (CreateBranchRequest) returns (CreateBranchResponse);
+  rpc WakeUpCompute (WakeUpComputeRequest) returns (WakeUpComputeResponse);
+  rpc GetStatus (GetStatusRequest) returns (GetStatusResponse);
+  rpc ListWorkspaces (ListWorkspacesRequest) returns (ListWorkspacesResponse);
+}
+
+message ProvisionDatabaseRequest {
+  string database_id = 1;
+  string team_id = 2;
+  string plan = 3;
+  string postgres_version = 4;
+}
+message ProvisionDatabaseResponse {
+  bool success = 1;
+  string error = 2;
+}
+message CreateBranchRequest {
+  string source_db_id = 1;
+  string new_branch_name = 2;
+  string new_branch_id = 3;
+}
+message CreateBranchResponse {
+  bool success = 1;
+  string error = 2;
+}
+message WakeUpComputeRequest {
+  string database_id = 1;
+}
+message WakeUpComputeResponse {
+  bool success = 1;
+}
+message GetStatusRequest {
+  string workspace_id = 1;
+}
+message GetStatusResponse {
+  string status_json = 1;
+}
+message ListWorkspacesRequest {}
+message ListWorkspacesResponse {
+  repeated string workspace_ids = 1;
+}
