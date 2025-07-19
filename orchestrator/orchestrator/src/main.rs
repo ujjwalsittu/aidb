@@ -75,38 +75,65 @@ impl Orchestrator for MyOrchestrator {
         Ok(Response::new(ProvisionDatabaseResponse { success: true, error: "".into() }))
     }
 
-    // == CREATE A BRANCH ==
-    async fn create_branch(
+    async fn list_all_timelines(
         &self,
-        request: Request<CreateBranchRequest>
-    ) -> Result<Response<CreateBranchResponse>, Status> {
-        let req = request.into_inner();
-        info!("CreateBranch: {:#?}", req);
-
-        let mut conn = establish_connection();
-        let branch = Project {
-            id: req.new_branch_id.clone(),
-            workspace_id: req.source_db_id.clone(),
-            db_version: "branch".to_string(),
-            status: "provisioning".to_string(),
-            created_at: Utc::now().naive_utc(),
-        };
-        db::insert_project(&mut conn, branch).map_err(|e| Status::internal(format!("{:?}", e)))?;
-
-        // Actually create the timeline on PageServer!
+        _request: Request<ListAllTimelinesRequest>
+    ) -> Result<Response<ListAllTimelinesResponse>, Status> {
         let pageserver_addr = "127.0.0.1:7867";
-        let resp = create_timeline(
-            pageserver_addr,
-            Some(&req.source_db_id),
-            None,
-            &req.new_branch_id
-        ).await.map_err(|e| Status::internal(format!("pageserver error: {:?}", e)))?;
-        if !resp.success {
-            return Err(Status::internal(format!("PageServer branch error: {}", resp.error)));
-        }
+        let client = pageserver_client::pageserver::page_server_client::PageServerClient::connect(
+            format!("http://{}", pageserver_addr)
+        ).await.map_err(|e| Status::internal(format!("{:?}", e)))?;
 
-        Ok(Response::new(CreateBranchResponse { success: true, error: "".into() }))
+        let response = client
+            .list_timelines(pageserver_client::pageserver::ListTimelinesRequest {})
+            .await
+            .map_err(|e| Status::internal(format!("{:?}", e)))?
+            .into_inner();
+
+        Ok(Response::new(ListAllTimelinesResponse {
+            timeline_ids: response.timeline_ids,
+        }))
     }
+
+
+
+    // == CREATE A BRANCH ==
+    // src/main.rs (inside your Orchestrator for MyOrchestrator)
+async fn create_branch(
+    &self,
+    request: Request<CreateBranchRequest>
+) -> Result<Response<CreateBranchResponse>, Status> {
+    let req = request.into_inner();
+    info!("CreateBranch: {:?}", req);
+
+    // 1. Insert a new project record (your DB logic here)
+    let mut conn = establish_connection();
+    let branch = Project {
+        id: req.new_branch_id.clone(),
+        workspace_id: req.source_db_id.clone(), // or lookup
+        db_version: "branch".to_string(),
+        status: "provisioning".to_string(),
+        created_at: Utc::now().naive_utc(),
+    };
+    db::insert_project(&mut conn, branch).map_err(|e| Status::internal(format!("{:?}", e)))?;
+
+    // 2. gRPC: Create timeline in the pageserver microservice
+    let pageserver_addr = "127.0.0.1:7867";
+    let resp = pageserver_client::create_timeline(
+        pageserver_addr,
+        Some(&req.source_db_id),
+        None,
+        &req.new_branch_id
+    ).await.map_err(|e| Status::internal(format!("pageserver error: {:?}", e)))?;
+    if !resp.success {
+        return Err(Status::internal(format!("PageServer branch error: {}", resp.error)));
+    }
+
+    // 3. (optionally) Deploy compute node for this branch, as with provision_database() above
+
+    Ok(Response::new(CreateBranchResponse { success: true, error: "".into() }))
+}
+
 
     async fn wake_up_compute(
         &self,

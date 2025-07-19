@@ -11,8 +11,8 @@ use rand::{distributions::Alphanumeric, Rng};
 
 /// ----------- ENV/SECRET HELPERS ------------
 
-fn env(name: &str, value: &str) -> EnvVar {
-    EnvVar {
+fn env(name: &str, value: &str) -> k8s_openapi::api::core::v1::EnvVar {
+    k8s_openapi::api::core::v1::EnvVar {
         name: name.to_string(),
         value: Some(value.to_string()),
         value_from: None,
@@ -127,6 +127,7 @@ pub async fn deploy_pg_compute(
             &format!("aidb-cred-{}", db_name),
             "POSTGRES_USER",
         ),
+        env("AIDB_TIMELINE_ID", &timeline_id), // timeline_id is either main or branch
         env_from_secret(
             "POSTGRES_PASSWORD",
             &format!("aidb-cred-{}", db_name),
