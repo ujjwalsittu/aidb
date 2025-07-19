@@ -1,0 +1,41 @@
+syntax = "proto3";
+package pageserver;
+
+service PageServer {
+  rpc GetPage(GetPageRequest) returns (GetPageResponse);
+  rpc CreateTimeline(CreateTimelineRequest) returns (CreateTimelineResponse);
+  rpc ListTimelines(ListTimelinesRequest) returns (ListTimelinesResponse);
+  rpc GcUnusedData(GcUnusedDataRequest) returns (GcUnusedDataResponse);
+}
+
+message GetPageRequest {
+  string timeline_id = 1;
+  uint64 lsn = 2;   // Log Sequence Number
+  bytes rel = 3;    // Relation/page key
+}
+
+message GetPageResponse {
+  bytes page_data = 1;
+  string error = 2;
+}
+
+message CreateTimelineRequest {
+  string base_timeline_id = 1;
+  uint64 fork_lsn = 2;
+  string new_timeline_id = 3;
+}
+message CreateTimelineResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+message ListTimelinesRequest {}
+message ListTimelinesResponse {
+  repeated string timeline_ids = 1;
+}
+
+message GcUnusedDataRequest {}
+message GcUnusedDataResponse {
+  bool success = 1;
+  string error = 2;
+}
